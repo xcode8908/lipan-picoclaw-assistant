@@ -22,7 +22,35 @@ FREELLM_KEY = os.environ.get("FREELLM_KEY", "sk-cp-9b5527df917c6e6463295c54976b3
 FREELLM_URL = os.environ.get("FREELLM_URL", "https://freellmapi-dab8.onrender.com/v1/chat/completions")
 PORT = int(os.environ.get("PORT", 10000))
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# ---------------------------------------------------------
+# Safe Message Sender (Never Fails, No Markdown Crashes)
+# ---------------------------------------------------------
+def safe_send_message(chat_id, text, reply_markup=None):
+    try:
+        return bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=reply_markup)
+    except Exception as e:
+        print(f"[Send Error] HTML parse failed, falling back to plain text: {e}")
+        # Strip simple HTML tags for fallback
+        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
+        return bot.send_message(chat_id, plain, parse_mode=None, reply_markup=reply_markup)
+
+def safe_reply_to(message, text, reply_markup=None):
+    try:
+        return bot.reply_to(message, text, parse_mode="HTML", reply_markup=reply_markup)
+    except Exception as e:
+        print(f"[Reply Error] HTML parse failed, falling back to plain text: {e}")
+        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
+        return bot.reply_to(message, plain, parse_mode=None, reply_markup=reply_markup)
+
+def safe_edit_message(chat_id, message_id, text, reply_markup=None):
+    try:
+        return bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="HTML", reply_markup=reply_markup)
+    except Exception as e:
+        print(f"[Edit Error] HTML parse failed, falling back to plain text: {e}")
+        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
+        return bot.edit_message_text(plain, chat_id=chat_id, message_id=message_id, parse_mode=None, reply_markup=reply_markup)
 
 # ---------------------------------------------------------
 # 1. Healthcheck Server (0ms Keep-Alive & Sentry Watchdog)
@@ -56,9 +84,9 @@ def owner_only(func):
         user_id = message.from_user.id
         if user_id != OWNER_ID:
             print(f"[Security] Unauthorized access attempt from ID: {user_id}")
-            bot.reply_to(
+            safe_reply_to(
                 message,
-                "🔒 *Access Restricted*\n\nYeh bot sirf *Lipan (@xcode8908)* ke liye reserved private AI assistant hai."
+                "🔒 <b>Access Restricted</b>\n\nYeh bot sirf <b>Lipan (@xcode8908)</b> ke liye reserved private AI assistant hai."
             )
             return
         return func(message, *args, **kwargs)
@@ -101,97 +129,159 @@ def call_ai(user_id, prompt):
         return f"⚠️ AI Connection Error: {str(e)}"
 
 # ---------------------------------------------------------
-# 4. Telegram Command Handlers
+# 4. Interactive Keyboards
+# ---------------------------------------------------------
+def get_main_menu_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    b1 = types.InlineKeyboardButton("📊 Fleet & Server Status", callback_data="cb_status")
+    b2 = types.InlineKeyboardButton("📋 My Saved Notes", callback_data="cb_notes")
+    b3 = types.InlineKeyboardButton("🔍 Web Search Help", callback_data="cb_search_help")
+    b4 = types.InlineKeyboardButton("🧹 Clear Conversation", callback_data="cb_clear")
+    b5 = types.InlineKeyboardButton("ℹ️ All Bot Features", callback_data="cb_help")
+    markup.add(b1, b2)
+    markup.add(b3, b4)
+    markup.add(b5)
+    return markup
+
+def get_reply_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("📊 Fleet Status", "📋 My Notes")
+    markup.row("ℹ️ Help Menu", "🧹 Clear Context")
+    return markup
+
+# ---------------------------------------------------------
+# 5. Telegram Command Handlers
 # ---------------------------------------------------------
 @bot.message_handler(commands=['start', 'help'])
 @owner_only
 def cmd_start(message):
     text = (
-        "👑 *Namaste Lipan Bhai! Welcome to @lipan_apex_bot*\n\n"
-        "Main hoon aapka dedicated **Personal PicoClaw AI Assistant**.\n"
-        "⚡ *24/7 Live | 0ms Keep-Alive | Lifetime Free ($0)*\n"
-        "💾 *Memory:* Neon PostgreSQL (Encrypted)\n\n"
-        "🛠️ *Aapke Superpowers:*\n"
-        "• 🎥 *Any Video Link* (Insta Reel/YouTube/X) bhejo → Direct MP4 video download file milegi.\n"
-        "• 🌐 `/search <query>` → Live internet search & news.\n"
-        "• 📊 `/status` → Pure 6 workers & Cloud PC ka live report.\n"
-        "• 📝 `/note <key> <text>` → Password/notes save karo permanent memory me.\n"
-        "• 📋 `/notes` → Saare saved notes dekho.\n"
-        "• 🗑️ `/clear` → Chat memory reset karo.\n"
-        "• 💬 *Normal message* bhejoge toh smart AI reply aayega!"
+        "👑 <b>Namaste Lipan Bhai! Welcome to @lipan_apex_bot</b>\n\n"
+        "Main hoon aapka dedicated <b>Personal PicoClaw AI Assistant</b>.\n"
+        "⚡ <b>Status:</b> 24/7 Live | 0ms Keep-Alive | Lifetime Free ($0)\n"
+        "💾 <b>Memory:</b> Neon PostgreSQL (Encrypted & Private)\n\n"
+        "🚀 <b>Aap Mere Saath Kya Kar Sakte Hain:</b>\n"
+        "• 🎥 <b>Any Video Link Bhejo</b> (Insta Reel / YouTube / X) → Direct original MP4 video download ho jayegi.\n"
+        "• 📊 <b>/status</b> → Saare 6 workers, Alpine Cloud PC & Sentry ka live health card.\n"
+        "• 📝 <b>/note &lt;name&gt; &lt;text&gt;</b> → Secret notes / passwords save karo.\n"
+        "• 📋 <b>/notes</b> → Saare saved notes dekho.\n"
+        "• 🔍 <b>/search &lt;query&gt;</b> → Live web search karo.\n"
+        "• 💬 <b>Normal message</b> bhejo → Smart AI assistant reply karega!\n\n"
+        "<i>Neeche buttons par click karke direct use karein:</i>"
     )
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row("📊 Fleet Status", "📋 My Notes")
-    markup.row("ℹ️ Help", "🗑️ Clear Context")
-    bot.reply_to(message, text, reply_markup=markup)
+    safe_reply_to(message, text, reply_markup=get_main_menu_keyboard())
 
 @bot.message_handler(commands=['status'])
 @owner_only
 def cmd_status(message):
-    wait_msg = bot.reply_to(message, "⏳ *Checking entire fleet health via Sentry Watchdog...*")
+    wait_msg = safe_reply_to(message, "⏳ <i>Checking entire fleet health via Sentry Watchdog...</i>")
     report = get_fleet_report()
-    bot.edit_message_text(report, chat_id=message.chat.id, message_id=wait_msg.message_id)
+    # Format report into clean HTML
+    html_report = f"<b>🛡️ Lipan Fleet Live Status:</b>\n\n<pre>{report}</pre>"
+    safe_edit_message(message.chat.id, wait_msg.message_id, html_report, reply_markup=get_main_menu_keyboard())
+
+@bot.message_handler(commands=['ping'])
+@owner_only
+def cmd_ping(message):
+    safe_reply_to(message, "🏓 <b>Pong!</b> 0ms Active & Ready for your command, Lipan bhai! ⚡")
 
 @bot.message_handler(commands=['note'])
 @owner_only
 def cmd_note(message):
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
-        bot.reply_to(message, "Usage: `/note <name> <content>`\nExample: `/note wifi MySecretPassword123`")
+        safe_reply_to(message, "💡 <b>Usage:</b> <code>/note &lt;name&gt; &lt;content&gt;</code>\n<b>Example:</b> <code>/note wifi MySecretPass123</code>")
         return
     key = parts[1]
     value = parts[2]
     ok = memory.save_note(OWNER_ID, key, value)
     if ok:
-        bot.reply_to(message, f"✅ Note `[{key}]` successfully Neon DB me save ho gaya!")
+        safe_reply_to(message, f"✅ Note <b>[{key}]</b> successfully Neon DB me save ho gaya!")
     else:
-        bot.reply_to(message, f"❌ Note save karne me error aaya.")
+        safe_reply_to(message, "❌ Note save karne me database error aaya.")
 
 @bot.message_handler(commands=['notes'])
 @owner_only
 def cmd_notes(message):
     notes = memory.get_notes(OWNER_ID)
     if not notes:
-        bot.reply_to(message, "📋 Abhi koi saved notes nahi hain. Save karne ke liye `/note <name> <value>` use karein.")
+        safe_reply_to(message, "📋 Abhi koi saved notes nahi hain. Naya note save karne ke liye likhein:\n<code>/note &lt;name&gt; &lt;value&gt;</code>")
         return
-    lines = ["📋 *Aapke Saved Notes (Neon DB):*", ""]
+    lines = ["📋 <b>Aapke Saved Notes (Neon DB):</b>\n"]
     for n in notes:
-        lines.append(f"• *{n['note_key']}:* `{n['note_value']}`")
-    bot.reply_to(message, "\n".join(lines))
+        lines.append(f"• <b>{n['note_key']}:</b> <code>{n['note_value']}</code>")
+    safe_reply_to(message, "\n".join(lines))
 
 @bot.message_handler(commands=['delnote'])
 @owner_only
 def cmd_delnote(message):
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        bot.reply_to(message, "Usage: `/delnote <name>`")
+        safe_reply_to(message, "💡 <b>Usage:</b> <code>/delnote &lt;name&gt;</code>")
         return
     key = parts[1]
     ok = memory.delete_note(OWNER_ID, key)
     if ok:
-        bot.reply_to(message, f"🗑️ Note `[{key}]` delete kar diya gaya.")
+        safe_reply_to(message, f"🗑️ Note <b>[{key}]</b> delete kar diya gaya.")
     else:
-        bot.reply_to(message, f"❌ Note delete karne me error.")
+        safe_reply_to(message, "❌ Note delete karne me error.")
 
 @bot.message_handler(commands=['search'])
 @owner_only
 def cmd_search(message):
     query = message.text.replace("/search", "", 1).strip()
     if not query:
-        bot.reply_to(message, "Usage: `/search <query>`\nExample: `/search latest tech news`")
+        safe_reply_to(message, "💡 <b>Usage:</b> <code>/search &lt;query&gt;</code>\n<b>Example:</b> <code>/search latest gold rate today</code>")
         return
-    wait_msg = bot.reply_to(message, f"🔍 *Searching web for:* `{query}`...")
+    wait_msg = safe_reply_to(message, f"🔍 <i>Searching web for: {query}...</i>")
     res = web_search(query)
-    bot.edit_message_text(f"🌐 *Search Results for:* `{query}`\n\n{res}", chat_id=message.chat.id, message_id=wait_msg.message_id)
+    safe_edit_message(message.chat.id, wait_msg.message_id, f"🌐 <b>Search Results for:</b> <code>{query}</code>\n\n{res}")
 
 @bot.message_handler(commands=['clear'])
 @owner_only
 def cmd_clear(message):
     memory.clear_chat(OWNER_ID)
-    bot.reply_to(message, "🧹 *Chat context clear ho gaya!* Nayi conversation start ho chuki hai.")
+    safe_reply_to(message, "🧹 <b>Chat context clear ho gaya!</b> Nayi fresh conversation start ho chuki hai.")
 
 # ---------------------------------------------------------
-# 5. Media & General Message Handler
+# 6. Callback Query Handler (Inline Button Taps)
+# ---------------------------------------------------------
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    if call.from_user.id != OWNER_ID:
+        bot.answer_callback_query(call.id, "🔒 Access Restricted", show_alert=True)
+        return
+
+    bot.answer_callback_query(call.id)
+    chat_id = call.message.chat.id
+
+    if call.data == "cb_status":
+        wait_msg = safe_send_message(chat_id, "⏳ <i>Checking entire fleet health via Sentry Watchdog...</i>")
+        report = get_fleet_report()
+        safe_edit_message(chat_id, wait_msg.message_id, f"<b>🛡️ Lipan Fleet Live Status:</b>\n\n<pre>{report}</pre>", reply_markup=get_main_menu_keyboard())
+
+    elif call.data == "cb_notes":
+        notes = memory.get_notes(OWNER_ID)
+        if not notes:
+            safe_send_message(chat_id, "📋 Abhi koi saved notes nahi hain. Likh kar bhejein:\n<code>/note &lt;name&gt; &lt;value&gt;</code>", reply_markup=get_main_menu_keyboard())
+        else:
+            lines = ["📋 <b>Aapke Saved Notes (Neon DB):</b>\n"]
+            for n in notes:
+                lines.append(f"• <b>{n['note_key']}:</b> <code>{n['note_value']}</code>")
+            safe_send_message(chat_id, "\n".join(lines), reply_markup=get_main_menu_keyboard())
+
+    elif call.data == "cb_clear":
+        memory.clear_chat(OWNER_ID)
+        safe_send_message(chat_id, "🧹 <b>Chat context clear ho gaya!</b>", reply_markup=get_main_menu_keyboard())
+
+    elif call.data == "cb_search_help":
+        safe_send_message(chat_id, "🔍 <b>Web Search Kaise Karein:</b>\n\nChat me likhein:\n<code>/search &lt;query&gt;</code>\nYa seedha likhein:\n<code>search gold rate today</code>", reply_markup=get_main_menu_keyboard())
+
+    elif call.data == "cb_help":
+        cmd_start(call.message)
+
+# ---------------------------------------------------------
+# 7. Media & General Message Handler
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda msg: True)
 @owner_only
@@ -205,50 +295,51 @@ def handle_all_messages(message):
     elif text == "📋 My Notes":
         cmd_notes(message)
         return
-    elif text == "🗑️ Clear Context":
+    elif text == "🧹 Clear Context":
         cmd_clear(message)
         return
-    elif text == "ℹ️ Help":
+    elif text == "ℹ️ Help Menu":
         cmd_start(message)
         return
 
     # Check if message contains media URL (Instagram, YouTube, X, etc.)
     media_url = is_media_url(text)
     if media_url:
-        status_msg = bot.reply_to(message, "⏳ *Video link detect hua! Downloading via yt-dlp...*")
+        status_msg = safe_reply_to(message, "⏳ <b>Video link detect hua!</b> <i>Downloading video file via yt-dlp...</i>")
         res = download_media(media_url)
         if res.get("success"):
             file_path = res["file_path"]
             title = res.get("title", "Video")
             try:
-                bot.edit_message_text("📤 *Uploading video to Telegram...*", chat_id=message.chat.id, message_id=status_msg.message_id)
+                safe_edit_message(message.chat.id, status_msg.message_id, "📤 <b>Uploading video to Telegram...</b>")
                 with open(file_path, "rb") as video_file:
                     bot.send_video(
                         message.chat.id,
                         video_file,
-                        caption=f"🎬 *{title}*\n\n⚡ Downloaded by @lipan_apex_bot",
+                        caption=f"🎬 <b>{title}</b>\n\n⚡ Downloaded by @lipan_apex_bot",
+                        parse_mode="HTML",
                         reply_to_message_id=message.message_id
                     )
                 bot.delete_message(message.chat.id, status_msg.message_id)
             except Exception as e:
-                bot.edit_message_text(f"❌ Upload error: {str(e)}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                safe_edit_message(message.chat.id, status_msg.message_id, f"❌ Upload error: {str(e)}")
             finally:
                 if os.path.exists(file_path):
                     os.remove(file_path)
         else:
-            bot.edit_message_text(
-                f"❌ Download failed: {res.get('error', 'Unknown error')}",
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id
+            safe_edit_message(
+                message.chat.id,
+                status_msg.message_id,
+                f"❌ Download failed: {res.get('error', 'Unknown error')}"
             )
         return
 
     # Check for direct search phrasing
     if text.lower().startswith("search ") or text.lower().startswith("google "):
         query = text.split(" ", 1)[1].strip()
-        wait_msg = bot.reply_to(message, f"🔍 *Searching web for:* `{query}`...")
+        wait_msg = safe_reply_to(message, f"🔍 <i>Searching web for: {query}...</i>")
         res = web_search(query)
-        bot.edit_message_text(f"🌐 *Search Results:*\n\n{res}", chat_id=message.chat.id, message_id=wait_msg.message_id)
+        safe_edit_message(message.chat.id, wait_msg.message_id, f"🌐 <b>Search Results for:</b> <code>{query}</code>\n\n{res}")
         return
 
     # General AI Conversation
@@ -256,10 +347,10 @@ def handle_all_messages(message):
     memory.save_chat(OWNER_ID, "user", text)
     ai_reply = call_ai(OWNER_ID, text)
     memory.save_chat(OWNER_ID, "assistant", ai_reply)
-    bot.reply_to(message, ai_reply)
+    safe_reply_to(message, ai_reply, reply_markup=get_reply_keyboard())
 
 # ---------------------------------------------------------
-# 6. Main Boot
+# 8. Main Boot
 # ---------------------------------------------------------
 if __name__ == "__main__":
     START_TIME = time.time()
