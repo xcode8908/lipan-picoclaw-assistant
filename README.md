@@ -9,3 +9,4 @@ Private, 24/7 Always-On Autonomous AI Assistant for Lipan Moharana on Telegram.
 - **Fleet Monitor:** Live monitoring of all 6 Render worker nodes, Alpine Cloud PC, and Sentry Watchdog.
 - **Encrypted Persistent Memory:** Neon PostgreSQL (Singapore Node) for lifelong personal notes and chat context.
 - **24/7 0ms Keep-Alive:** Wired into Sentry Watchdog ping network.
+

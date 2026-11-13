@@ -25,3 +25,4 @@ EXPOSE 10000
 
 # Start bot and healthcheck server
 CMD ["python", "bot_main.py"]
+

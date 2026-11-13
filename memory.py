@@ -116,3 +116,4 @@ def delete_note(user_id, note_key):
         return False
     finally:
         conn.close()
+
