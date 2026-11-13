@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import re
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
@@ -13,7 +14,7 @@ from tools.search import web_search
 import memory
 
 # ---------------------------------------------------------
-# Configuration
+# Configuration (100% Solo & Dedicated)
 # ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "9261150155:AAF3KURDsHJb1x9WTuR8Efw21Vx4ztubj_8")
 OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID", "7198790563"))
@@ -25,63 +26,58 @@ START_TIME = time.time()
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # ---------------------------------------------------------
-# Keyboards & Menus ("sab ko menu ma laooo")
+# Markdown -> Telegram HTML Formatter
 # ---------------------------------------------------------
-def get_main_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, one_time_keyboard=False)
-    btn_chat = types.KeyboardButton("💬 AI Chat")
-    btn_download = types.KeyboardButton("📥 Video Downloader")
-    btn_search = types.KeyboardButton("🔍 Web Search")
-    btn_notes = types.KeyboardButton("📝 My Notes")
-    btn_ping = types.KeyboardButton("⚡ 0ms Status")
-    btn_clear = types.KeyboardButton("🧹 Clear Context")
-    markup.add(btn_chat, btn_download)
-    markup.add(btn_search, btn_notes)
-    markup.add(btn_ping, btn_clear)
-    return markup
+def format_telegram_html(text):
+    if not text:
+        return ""
+    # If already formatted with HTML tags, don't double escape
+    if "<b>" in text or "<code>" in text or "<pre>" in text:
+        return text
 
-def get_inline_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("💬 AI Chat Help", callback_data="menu_chat"),
-        types.InlineKeyboardButton("📥 Video Downloader", callback_data="menu_download")
-    )
-    markup.add(
-        types.InlineKeyboardButton("🔍 Web Search", callback_data="menu_search"),
-        types.InlineKeyboardButton("📝 My Notes", callback_data="menu_notes")
-    )
-    markup.add(
-        types.InlineKeyboardButton("⚡ 0ms Ping Test", callback_data="menu_ping"),
-        types.InlineKeyboardButton("🧹 Clear Chat", callback_data="menu_clear")
-    )
-    return markup
+    # Escape raw HTML special chars
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # Code blocks: ```python ... ```
+    escaped = re.sub(r'```(?:[a-zA-Z0-9_-]+)?\n?(.*?)```', r'<pre><code>\1</code></pre>', escaped, flags=re.DOTALL)
+    # Inline code: `code`
+    escaped = re.sub(r'`([^`]+)`', r'<code>\1</code>', escaped)
+    # Bold: **text**
+    escaped = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escaped)
+    # Bullet formatting
+    escaped = re.sub(r'(?m)^-\s+', '• ', escaped)
+    return escaped
+
+def strip_tags(text):
+    clean = re.sub(r'<[^>]+>', '', text)
+    return clean
 
 # ---------------------------------------------------------
-# Safe Message Sender (Never Fails)
+# Safe Message Sender (Never Fails, ChatGPT Clean)
 # ---------------------------------------------------------
 def safe_reply(message, text, reply_markup=None):
+    formatted = format_telegram_html(text)
     try:
-        return bot.reply_to(message, text, parse_mode="HTML", reply_markup=reply_markup)
+        return bot.reply_to(message, formatted, parse_mode="HTML", reply_markup=reply_markup)
     except Exception:
-        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
-        return bot.reply_to(message, plain, parse_mode=None, reply_markup=reply_markup)
+        return bot.reply_to(message, strip_tags(text), parse_mode=None, reply_markup=reply_markup)
 
 def safe_send(chat_id, text, reply_markup=None):
+    formatted = format_telegram_html(text)
     try:
-        return bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=reply_markup)
+        return bot.send_message(chat_id, formatted, parse_mode="HTML", reply_markup=reply_markup)
     except Exception:
-        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
-        return bot.send_message(chat_id, plain, parse_mode=None, reply_markup=reply_markup)
+        return bot.send_message(chat_id, strip_tags(text), parse_mode=None, reply_markup=reply_markup)
 
 def safe_edit(chat_id, message_id, text, reply_markup=None):
+    formatted = format_telegram_html(text)
     try:
-        return bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="HTML", reply_markup=reply_markup)
+        return bot.edit_message_text(formatted, chat_id=chat_id, message_id=message_id, parse_mode="HTML", reply_markup=reply_markup)
     except Exception:
-        plain = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "`").replace("</code>", "`")
-        return bot.edit_message_text(plain, chat_id=chat_id, message_id=message_id, parse_mode=None, reply_markup=reply_markup)
+        return bot.edit_message_text(strip_tags(text), chat_id=chat_id, message_id=message_id, parse_mode=None, reply_markup=reply_markup)
 
 # ---------------------------------------------------------
-# 1. 0ms Keep-Alive Server & Background Self-Pinger
+# 1. 0ms Keep-Alive Server & 60s Background Self-Pinger
 # ---------------------------------------------------------
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -91,7 +87,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         resp = {
             "status": "ok",
             "bot": "@lipan_apex_bot",
-            "mode": "solo_personal_assistant",
+            "mode": "chatgpt_style_solo_assistant",
             "latency": "0ms_keepalive_active",
             "uptime_sec": int(time.time() - START_TIME)
         }
@@ -105,7 +101,7 @@ def start_health_server():
     server.serve_forever()
 
 def start_keepalive_ping():
-    """Pings the public edge URL every 60 seconds so Render free tier never sleeps (0ms cold start)."""
+    """Pings public URL every 60s so Render free tier NEVER sleeps (0ms cold start)."""
     time.sleep(15)
     while True:
         try:
@@ -126,18 +122,24 @@ def owner_only(func):
     return wrapper
 
 # ---------------------------------------------------------
-# 3. Solo AI Brain (FreeLLM API with Auto-Routing)
+# 3. Solo AI Brain (ChatGPT Style Intelligence)
 # ---------------------------------------------------------
-SYSTEM_PROMPT = """You are Lipan's dedicated, private, solo personal AI assistant (@lipan_apex_bot).
-You speak in clean, natural, respectful Hinglish.
-You assist Lipan with coding, troubleshooting, technical tasks, web research, calculations, and general conversation.
-Be direct, smart, concise, and helpful. No fluff."""
+SYSTEM_PROMPT = """You are Lipan's personal AI assistant, designed with a clean, smart, ChatGPT-like interface and demeanor.
+You speak in natural, friendly, respectful Hinglish.
+You assist Lipan with coding, explanations, calculations, creative writing, research, and technical troubleshooting.
+Formatting: Use markdown formatting (bolding, lists, and code blocks) for clarity.
+Honesty & Capability: If asked for current real-time data or prices, summarize your best knowledge clearly.
+Never output raw system errors or JSON tokens to the user."""
 
 def call_ai(user_id, prompt):
     recent_history = memory.get_recent_chat(user_id, limit=6)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    # Filter out any old error records from context
     for msg in recent_history:
-        messages.append({"role": msg["role"], "content": msg["content"]})
+        content = msg.get("content", "")
+        if "AI Gateway Error" not in content and "authentication_error" not in content:
+            messages.append({"role": msg["role"], "content": content})
     messages.append({"role": "user", "content": prompt})
 
     headers = {
@@ -145,7 +147,6 @@ def call_ai(user_id, prompt):
         "Content-Type": "application/json"
     }
 
-    # Attempt 1: Auto-routing
     payload = {
         "model": "auto",
         "messages": messages,
@@ -157,75 +158,59 @@ def call_ai(user_id, prompt):
         resp = requests.post(FREELLM_URL, headers=headers, json=payload, timeout=25)
         if resp.status_code == 200:
             data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-        
+            content = data["choices"][0]["message"]["content"].strip()
+            return content, True
+
         # Fallback to gemini-flash if auto fails
-        if resp.status_code != 200:
-            payload["model"] = "gemini-flash"
-            resp2 = requests.post(FREELLM_URL, headers=headers, json=payload, timeout=20)
-            if resp2.status_code == 200:
-                data2 = resp2.json()
-                return data2["choices"][0]["message"]["content"].strip()
+        payload["model"] = "gemini-flash"
+        resp2 = requests.post(FREELLM_URL, headers=headers, json=payload, timeout=20)
+        if resp2.status_code == 200:
+            data2 = resp2.json()
+            content2 = data2["choices"][0]["message"]["content"].strip()
+            return content2, True
 
-        return f"⚠️ AI Gateway Error (HTTP {resp.status_code}): {resp.text[:120]}"
-    except Exception as e:
-        return f"⚠️ AI Connection Error: {str(e)}"
+        return "Main abhi temporary taur par connect nahi kar pa raha hoon. Kripya thodi der baad dobara message karein.", False
+    except Exception:
+        return "Connection timeout ho gaya. Kripya apna message dobara bhejein.", False
 
 # ---------------------------------------------------------
-# 4. Commands & Menus
+# 4. Essential Commands Only (Clean & ChatGPT-like)
 # ---------------------------------------------------------
-@bot.message_handler(commands=['start', 'menu'])
+@bot.message_handler(commands=['start'])
 @owner_only
 def cmd_start(message):
-    text = (
-        "👑 <b>Namaste Lipan Bhai! Welcome to Apex Solo AI</b>\n\n"
-        "Main aapka <b>100% Solo & Private Personal Assistant</b> hoon (@lipan_apex_bot).\n"
-        "Neeche diye gaye <b>Touch Menu</b> ya <b>Buttons</b> se koi bhi action select karein:\n\n"
-        "• 💬 <b>AI Chat:</b> Normal sawaal ya code bhejein — instant reply.\n"
-        "• 📥 <b>Video Downloader:</b> Insta, YouTube, X ka link paste karein.\n"
-        "• 🔍 <b>Web Search:</b> Real-time live web browsing.\n"
-        "• 📝 <b>My Notes:</b> Cloud database me secure notes save karein.\n"
-        "• ⚡ <b>0ms Status:</b> Real-time latency & health check.\n"
-        "• 🧹 <b>Clear Context:</b> Conversation history reset."
+    # Remove any stuck keyboards so chat area is clean like ChatGPT
+    rm_markup = types.ReplyKeyboardRemove()
+    welcome_text = (
+        "🤖 <b>Apex Solo AI (ChatGPT Interface)</b>\n\n"
+        "Namaste Lipan Bhai! Main aapka <b>100% Solo & Private AI Assistant</b> hoon (@lipan_apex_bot).\n"
+        "Baki kisi bhi bot ya external server se koi connection nahi hai — pure solo architecture.\n\n"
+        "💬 <b>Features:</b>\n"
+        "• <b>ChatGPT Style Chat:</b> Seedha koi bhi sawaal, code ya advice normal chat me pucho.\n"
+        "• <b>➕ New Chat:</b> <code>/new</code> se conversation reset karke fresh topic shuru karein.\n"
+        "• <b>📥 Video Downloader:</b> Insta, YouTube, ya X ka video link bhejo — video file mil jayegi.\n"
+        "• <b>🌐 Web Search:</b> <code>/search &lt;query&gt;</code> ya <code>search &lt;query&gt;</code>.\n"
+        "• <b>📝 Notes:</b> <code>/notes</code> (dekhna) ya <code>/note &lt;name&gt; &lt;text&gt;</code> (save karna).\n\n"
+        "Aap seedha apna message yahan type karein! 👇"
     )
-    # Send with both Persistent Keyboard and Inline Interactive Menu
-    safe_send(message.chat.id, text, reply_markup=get_main_keyboard())
-    safe_send(message.chat.id, "👇 <b>Quick Action Menu:</b>", reply_markup=get_inline_menu())
+    safe_send(message.chat.id, welcome_text, reply_markup=rm_markup)
 
-@bot.message_handler(commands=['ping'])
+@bot.message_handler(commands=['new', 'clear'])
 @owner_only
-def cmd_ping(message):
-    t0 = time.time()
-    db_ok = memory.save_note(OWNER_ID, "_ping_test", "1")
-    latency = round((time.time() - t0) * 1000, 1)
-    uptime = int(time.time() - START_TIME)
-    uptime_str = f"{uptime // 3600}h {(uptime % 3600) // 60}m {uptime % 60}s"
-    
-    text = (
-        "⚡ <b>0ms Apex Keep-Alive Status: LIVE</b>\n\n"
-        f"• <b>Ping Latency:</b> <code>{latency}ms</code> (0ms Keep-Alive Active)\n"
-        f"• <b>Database:</b> <code>{'Connected (Neon Postgres)' if db_ok else 'Error'}</code>\n"
-        f"• <b>AI Engine:</b> <code>FreeLLM Auto-Router (Online)</code>\n"
-        f"• <b>Uptime:</b> <code>{uptime_str}</code>\n"
-        f"• <b>Render Keep-Alive:</b> <code>Every 60s Self-Ping Active</code>\n"
-        "• <b>Architecture:</b> <code>100% Solo & Private</code>"
-    )
-    safe_reply(message, text)
+def cmd_new(message):
+    memory.clear_chat(OWNER_ID)
+    safe_reply(message, "✨ <b>New Chat Started!</b> Pichla conversation context clear ho gaya hai. Aap naya sawal pooch sakte hain.")
 
-@bot.message_handler(commands=['note'])
+@bot.message_handler(commands=['search'])
 @owner_only
-def cmd_note(message):
-    parts = message.text.split(maxsplit=2)
-    if len(parts) < 3:
-        safe_reply(message, "💡 <b>Usage:</b> <code>/note &lt;name&gt; &lt;content&gt;</code>\n<b>Example:</b> <code>/note wifi MySecretPass123</code>")
+def cmd_search(message):
+    query = message.text.replace("/search", "", 1).strip()
+    if not query:
+        safe_reply(message, "💡 <b>Usage:</b> <code>/search &lt;query&gt;</code>\n<b>Example:</b> <code>/search flipkart best deals today</code>")
         return
-    key = parts[1]
-    value = parts[2]
-    ok = memory.save_note(OWNER_ID, key, value)
-    if ok:
-        safe_reply(message, f"✅ Note <b>[{key}]</b> Neon DB me save ho gaya!")
-    else:
-        safe_reply(message, "❌ Note save karne me database error aaya.")
+    wait_msg = safe_reply(message, f"🔍 <i>Searching web for: {query}...</i>")
+    res = web_search(query)
+    safe_edit(message.chat.id, wait_msg.message_id, f"🌐 <b>Search Results:</b> <code>{query}</code>\n\n{res}")
 
 @bot.message_handler(commands=['notes'])
 @owner_only
@@ -239,6 +224,21 @@ def cmd_notes(message):
     for n in valid_notes:
         lines.append(f"• <b>{n['note_key']}:</b> <code>{n['note_value']}</code>")
     safe_reply(message, "\n".join(lines))
+
+@bot.message_handler(commands=['note'])
+@owner_only
+def cmd_note(message):
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        safe_reply(message, "💡 <b>Usage:</b> <code>/note &lt;name&gt; &lt;content&gt;</code>\n<b>Example:</b> <code>/note wifi MyPass123</code>")
+        return
+    key = parts[1]
+    value = parts[2]
+    ok = memory.save_note(OWNER_ID, key, value)
+    if ok:
+        safe_reply(message, f"✅ Note <b>[{key}]</b> Neon DB me save ho gaya!")
+    else:
+        safe_reply(message, "❌ Note save karne me database error aaya.")
 
 @bot.message_handler(commands=['delnote'])
 @owner_only
@@ -254,83 +254,18 @@ def cmd_delnote(message):
     else:
         safe_reply(message, "❌ Note delete karne me error.")
 
-@bot.message_handler(commands=['search'])
-@owner_only
-def cmd_search(message):
-    query = message.text.replace("/search", "", 1).strip()
-    if not query:
-        safe_reply(message, "💡 <b>Usage:</b> <code>/search &lt;query&gt;</code>\n<b>Example:</b> <code>/search python async guide</code>")
-        return
-    wait_msg = safe_reply(message, f"🔍 <i>Searching web for: {query}...</i>")
-    res = web_search(query)
-    safe_edit(message.chat.id, wait_msg.message_id, f"🌐 <b>Results for:</b> <code>{query}</code>\n\n{res}")
-
-@bot.message_handler(commands=['clear'])
-@owner_only
-def cmd_clear(message):
-    memory.clear_chat(OWNER_ID)
-    safe_reply(message, "🧹 <b>Chat history & context clear ho gaya!</b>")
-
 # ---------------------------------------------------------
-# 5. Callback Query Handler (Inline Menu Taps)
-# ---------------------------------------------------------
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callbacks(call):
-    if call.from_user.id != OWNER_ID:
-        bot.answer_callback_query(call.id, "Access restricted", show_alert=True)
-        return
-
-    data = call.data
-    bot.answer_callback_query(call.id)
-
-    if data == "menu_chat":
-        text = "💬 <b>AI Chat:</b>\nAap mujhse koi bhi sawaal, code ya calculation seedha chat me pucho — instant answer milega!"
-        safe_send(call.message.chat.id, text)
-    elif data == "menu_download":
-        text = "📥 <b>Video Downloader:</b>\nKoi bhi Instagram Reel, YouTube Video/Short, ya Twitter/X video ka link chat me paste karo — main video file download karke seedha bhej dunga."
-        safe_send(call.message.chat.id, text)
-    elif data == "menu_search":
-        text = "🔍 <b>Web Search:</b>\nType karein: <code>search &lt;query&gt;</code> ya <code>/search &lt;query&gt;</code> (e.g. <code>search python tutorials</code>)."
-        safe_send(call.message.chat.id, text)
-    elif data == "menu_notes":
-        cmd_notes(call.message)
-    elif data == "menu_ping":
-        cmd_ping(call.message)
-    elif data == "menu_clear":
-        cmd_clear(call.message)
-
-# ---------------------------------------------------------
-# 6. Button Text Handler & Pure Chat
+# 5. Pure ChatGPT Style Chat & Media Downloader
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda msg: True)
 @owner_only
 def handle_all_messages(message):
     text = message.text.strip()
 
-    # 1. Menu Button Taps
-    if text == "💬 AI Chat":
-        safe_reply(message, "💬 <b>AI Chat Active!</b>\nKoi bhi sawaal ya query seedha type karke send karo!")
-        return
-    elif text == "📥 Video Downloader":
-        safe_reply(message, "📥 <b>Video Downloader:</b>\nBas Instagram, YouTube ya Twitter/X ka link paste karo!")
-        return
-    elif text == "🔍 Web Search":
-        safe_reply(message, "🔍 <b>Web Search:</b>\nType karein: <code>search &lt;topic&gt;</code> (e.g. <code>search latest AI models</code>)")
-        return
-    elif text == "📝 My Notes":
-        cmd_notes(message)
-        return
-    elif text == "⚡ 0ms Status":
-        cmd_ping(message)
-        return
-    elif text == "🧹 Clear Context":
-        cmd_clear(message)
-        return
-
-    # 2. Media Link Detection (Instagram, YouTube, Twitter/X, etc.)
+    # 1. Media Link Detection (Instagram, YouTube, Twitter/X)
     media_url = is_media_url(text)
     if media_url:
-        status_msg = safe_reply(message, "⏳ <i>Video link detect hua! Downloading via yt-dlp...</i>")
+        status_msg = safe_reply(message, "⏳ <i>Video link detect hua! Downloading...</i>")
         res = download_media(media_url)
         if res.get("success"):
             file_path = res["file_path"]
@@ -355,42 +290,43 @@ def handle_all_messages(message):
             safe_edit(message.chat.id, status_msg.message_id, f"❌ Download failed: {res.get('error', 'Error')}")
         return
 
-    # 3. Direct Search query (e.g. "search python tutorials")
+    # 2. Web search trigger if user types "search ..."
     if text.lower().startswith("search ") or text.lower().startswith("google "):
         query = text.split(" ", 1)[1].strip()
         wait_msg = safe_reply(message, f"🔍 <i>Searching web for: {query}...</i>")
         res = web_search(query)
-        safe_edit(message.chat.id, wait_msg.message_id, f"🌐 <b>Results for:</b> <code>{query}</code>\n\n{res}")
+        safe_edit(message.chat.id, wait_msg.message_id, f"🌐 <b>Search Results:</b> <code>{query}</code>\n\n{res}")
         return
 
-    # 4. Clean Natural AI Conversation
+    # 3. Clean ChatGPT Style Conversation
     bot.send_chat_action(message.chat.id, "typing")
-    memory.save_chat(OWNER_ID, "user", text)
-    ai_reply = call_ai(OWNER_ID, text)
-    memory.save_chat(OWNER_ID, "assistant", ai_reply)
+    ai_reply, is_success = call_ai(OWNER_ID, text)
+
+    # Save to database only if call was successful
+    if is_success:
+        memory.save_chat(OWNER_ID, "user", text)
+        memory.save_chat(OWNER_ID, "assistant", ai_reply)
+
     safe_reply(message, ai_reply)
 
 # ---------------------------------------------------------
-# 7. Main Boot
+# 6. Main Boot
 # ---------------------------------------------------------
 if __name__ == "__main__":
     print("==========================================================")
-    print("🤖 Starting Lipan 100% Solo Personal Assistant (@lipan_apex_bot)")
+    print("🤖 Starting Lipan 100% Solo AI Assistant (@lipan_apex_bot)")
     print(f"👑 Owner ID: {OWNER_ID}")
     print("==========================================================")
 
-    # Set native Telegram Command Menu
+    # Register only clean, important native Telegram Menu commands
     try:
         bot.set_my_commands([
-            types.BotCommand("start", "🚀 Main Dashboard & Menu"),
-            types.BotCommand("ping", "⚡ 0ms Status & Health Check"),
-            types.BotCommand("notes", "📋 View Saved Notes"),
-            types.BotCommand("note", "➕ Save Note (/note key value)"),
-            types.BotCommand("delnote", "🗑️ Delete Note (/delnote key)"),
-            types.BotCommand("search", "🔍 Web Search (/search query)"),
-            types.BotCommand("clear", "🧹 Clear Chat History")
+            types.BotCommand("start", "🚀 Start & Welcome"),
+            types.BotCommand("new", "➕ New Chat (Reset Conversation)"),
+            types.BotCommand("search", "🌐 Web Search (/search query)"),
+            types.BotCommand("notes", "📝 View Saved Notes")
         ], scope=types.BotCommandScopeChat(OWNER_ID))
-        print("[Bot] Registered native Telegram Command Menu")
+        print("[Bot] Registered minimalist Telegram Command Menu")
     except Exception as e:
         print(f"[Bot] Could not set my commands: {e}")
 
