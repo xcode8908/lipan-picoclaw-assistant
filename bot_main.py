@@ -190,7 +190,7 @@ def call_ai(user_id, prompt):
                 f"{kaggle_url}/chat/completions",
                 headers={"Authorization": "Bearer kaggle", "Content-Type": "application/json"},
                 json={
-                    "model": "dolphin-llama3:8b",
+                    "model": "huihui_ai/qwen2.5-coder-abliterate:7b",
                     "messages": messages,
                     "temperature": 0.7,
                     "max_tokens": 1024
@@ -273,7 +273,7 @@ def cmd_status(message):
     if k_url:
         text = (
             "🚀 <b>Live AI Engine: 🟢 Kaggle 32GB Dual T4 GPU</b>\n\n"
-            "• <b>Model:</b> <code>dolphin-llama3:8b (Uncensored)</code>\n"
+            "• <b>Model:</b> <code>huihui_ai/qwen2.5-coder-abliterate:7b (Uncensored Coder + Tools)</code>\n"
             "• <b>Hardware:</b> <code>2x Tesla T4 (32GB VRAM)</code>\n"
             "• <b>Refusal Filter:</b> <code>Zero Refusals (Active)</code>\n"
             f"• <b>Tunnel Endpoint:</b> <code>{k_url}</code>"
